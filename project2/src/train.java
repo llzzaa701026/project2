@@ -10,7 +10,7 @@ import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;  
 import org.wltea.analyzer.lucene.IKAnalyzer;
 
-
+import org.apache.hadoop.mapreduce.lib.output.MultipleOutputs;  
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -27,6 +27,7 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.map.InverseMapper;
 import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.util.GenericOptionsParser;
 
 public class train {
@@ -53,11 +54,8 @@ public class train {
 
         
         String  fileName = ((FileSplit) inputSplit).getPath().getName();
-        String[] file=fileName.split("."); 
-        if(file.length<1){
-        	return;
-        }
-        fileName=file[0];
+        
+        fileName=fileName.substring(0, fileName.length()-4);
         System.out.println(fileName+"fileName");
         TokenStream tokenStream = analyzer.tokenStream("content",  
                 new StringReader(sourceStr));  
@@ -79,7 +77,21 @@ public class train {
   public static class IntSumReducer extends
       Reducer<Text, Text, Text, Text> {
     private Text result = new Text();
-    int i=0;
+    private MultipleOutputs<Text, Text> muloutputs;  
+    int i;
+    @Override  
+    public void setup(Context context) throws IOException, InterruptedException {  
+        //System.out.println("enter LogReducer:::setup method");  
+    	muloutputs = new MultipleOutputs(context);  
+        i=0;
+    }  
+  
+    @Override  
+    public void cleanup(Context context) throws IOException, InterruptedException {  
+        //System.out.println("enter LogReducer:::cleanup method");  
+    	muloutputs.close();  
+    } 
+    
     public void reduce(Text key, Iterable<Text> values, Context context)
         throws IOException, InterruptedException {
       int sum = 0;
@@ -110,7 +122,16 @@ public class train {
     	  strresult=strresult+titlelist.get(i).toString()+":"+sumlist.get(i).toString()+",";
     	  }
       result.set(strresult);
-      context.write(key, result);
+      Text a=new Text();
+      i=i+1;
+      a.set(String.valueOf(i));
+      if(i>50){
+    	  muloutputs.write("big", key, result);
+      }
+      else{
+    	  muloutputs.write("small", a, result);
+      }
+     // context.write(a, result);
       /*Configuration conf=context.getConfiguration();
       int k=Integer.valueOf(conf.get("k"));
       if (sum<k){
@@ -140,6 +161,8 @@ public class train {
 	    job.setReducerClass(IntSumReducer.class);
 	    job.setOutputKeyClass(Text.class);
 	    job.setOutputValueClass(Text.class);
+	    MultipleOutputs.addNamedOutput(job, "big", TextOutputFormat.class, Text.class, Text.class);                                                                                                                      
+        MultipleOutputs.addNamedOutput(job, "small", TextOutputFormat.class, Text.class, Text.class); 
 	    FileInputFormat.addInputPath(job, new Path(otherArgs[0]));
 	    FileOutputFormat.setOutputPath(job, new Path(otherArgs[1]));
 	    System.exit(job.waitForCompletion(true) ? 0 : 1);
