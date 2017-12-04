@@ -61,7 +61,7 @@ public class train {
   public static class IntSumReducer extends
       Reducer<Text, IntWritable, Text, IntWritable> {
     private IntWritable result = new IntWritable();
-
+    int i=0;
     public void reduce(Text key, Iterable<IntWritable> values, Context context)
         throws IOException, InterruptedException {
       int sum = 0;
@@ -74,7 +74,11 @@ public class train {
     	  return;
       }*/
       result.set(sum);
-      context.write(key, result);
+      //context.write(key, result);
+      Text a=new Text();
+      i=i+1;
+      a.set(String.valueOf(i));
+      context.write(a, result);
     }
   }
 
