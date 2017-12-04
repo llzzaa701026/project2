@@ -37,6 +37,8 @@ public class train {
 
     private final static IntWritable one = new IntWritable(1);
     private Text word = new Text();
+    private Text type = new Text();
+    private Text trainsymbol = new Text();
     private Text filetitle = new Text();
       
     public void map(Object key, Text value, Context context)
@@ -52,9 +54,10 @@ public class train {
         }*/
         InputSplit inputSplit = context.getInputSplit();
 
-        
-        String  fileName = ((FileSplit) inputSplit).getPath().getName();
-        
+        Path path=((FileSplit) inputSplit).getPath();
+        String  fileName = path.getName();
+        String strtype = path.getParent().getName();
+        String strtrainsymbol = path.getParent().getParent().getName();
         fileName=fileName.substring(0, fileName.length()-4);
         System.out.println(fileName+"fileName");
         TokenStream tokenStream = analyzer.tokenStream("content",  
@@ -65,6 +68,11 @@ public class train {
             word.set(charTermAttribute.toString());  
             filetitle.set(fileName+":1");
             context.write(word, filetitle);
+            type.set(strtype);
+            context.write(type, filetitle);
+            trainsymbol.set(strtrainsymbol);
+            context.write(trainsymbol, filetitle);
+            
         }  
         
         
@@ -96,6 +104,7 @@ public class train {
         throws IOException, InterruptedException {
       int sum = 0;
       int conut;
+      int flag;
       String title;
       ArrayList<String> titlelist = new ArrayList<String>();
       ArrayList<Integer> sumlist = new ArrayList<Integer>();
@@ -154,6 +163,7 @@ public class train {
 	      System.err.println("Usage: wordcount <in> <out>");
 	      System.exit(2);
 	    }
+	    conf.set("mapreduce.input.fileinputformat.input.dir.recursive", "true"); 
 	    Job job = new Job(conf, "word count");
 	    job.setJarByClass(train.class);
 	    job.setMapperClass(TokenizerMapper.class);
