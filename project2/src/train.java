@@ -35,10 +35,8 @@ public class train {
   public static class TokenizerMapper extends
       Mapper<Object,   Text, Text, Text> {
 
-    private final static IntWritable one = new IntWritable(1);
+
     private Text word = new Text();
-    private Text type = new Text();
-    private Text trainsymbol = new Text();
     private Text filetitle = new Text();
       
     public void map(Object key, Text value, Context context)
@@ -57,6 +55,13 @@ public class train {
         Path path=((FileSplit) inputSplit).getPath();
         String  fileName = path.getName();
         String strtype = path.getParent().getName();
+        if(strtype.contains("positive")){
+        	strtype="P";// 正类样本标记
+        }else if(strtype.contains("negative")){
+        	strtype="N";// 负类样本标记
+        }else{
+        	strtype="O";// 中性样本标记
+        }
         String strtrainsymbol = path.getParent().getParent().getName();
         fileName=fileName.substring(0, fileName.length()-4);
         System.out.println(fileName+"fileName");
@@ -66,7 +71,7 @@ public class train {
             CharTermAttribute charTermAttribute = tokenStream  
                     .getAttribute(CharTermAttribute.class);  
             word.set(charTermAttribute.toString());  
-            filetitle.set(strtrainsymbol+fileName+":1");
+            filetitle.set(strtrainsymbol+strtype+fileName+":1");
             context.write(word, filetitle);
            /* type.set(strtype);
             context.write(type, filetitle);
@@ -139,12 +144,12 @@ public void map(Object key, Text value, Context context)
       Reducer<Text, Text, Text, Text> {
     private Text result = new Text();
     //private MultipleOutputs<Text, Text> muloutputs;  
-    int i;
+    int id ;
     @Override  
     public void setup(Context context) throws IOException, InterruptedException {  
         //System.out.println("enter LogReducer:::setup method");  
     	//muloutputs = new MultipleOutputs(context);  
-        i=0;
+    	id = 0;;
     }  
   
     @Override  
@@ -163,13 +168,12 @@ public void map(Object key, Text value, Context context)
     }
     public void reduce(Text key, Iterable<Text> values, Context context)
         throws IOException, InterruptedException {
-      int id = 0;
+     
       int conut;
-      int flag;
       String title;
       ArrayList<String> titlelist = new ArrayList<String>();
       ArrayList<Integer> tf = new ArrayList<Integer>();
-      ArrayList<Double> tfidf = new ArrayList<Double>();
+ 
       for (Text val : values) {
     	  String[] a=val.toString().split(",");
     	  for (int j=0;j<a.length;j++){
@@ -220,6 +224,7 @@ public void map(Object key, Text value, Context context)
       Text a=new Text();
       i=i+1;
       a.set(String.valueOf(i));*/
+      id=id+1;
       key.set(String.valueOf(id));
      context.write(key, result);
     }
@@ -227,15 +232,41 @@ public void map(Object key, Text value, Context context)
 
   public static class VectorizeReducer extends
   Reducer<Text, Text, Text, Text> {
-
+	  private MultipleOutputs<Text, Text> muloutputs;
 	  Text vectorText=new Text();
+	  
+	  @Override  
+	  public void setup(Context context) throws IOException, InterruptedException {  
+	        //System.out.println("enter LogReducer:::setup method");  
+	    	muloutputs = new MultipleOutputs<Text, Text>(context); 	    	
+	    }  
+	  
+	    @Override  
+	  public void cleanup(Context context) throws IOException, InterruptedException {  
+	        //System.out.println("enter LogReducer:::cleanup method");  
+	    	muloutputs.close();  
+	    }
 public void reduce(Text key, Iterable<Text> values, Context context)
     throws IOException, InterruptedException {
-	String vector="";
+	String strkey=key.toString();
+	String vector;//label
+	if(strkey.contains("P")){
+		vector="1";//positive label
+	}else if(strkey.contains("N")){
+		vector="2";//negative label
+	}else{
+		vector="3";//neutral label
+	}
+	
 	for (Text val : values) {
-		vector=vector+" "+val.toString();
-	     
+		vector=vector+" "+val.toString();	     
 	 }
+	//训练集 测试集 的文本向量分别输出
+	if(strkey.contains("train")){ 
+	  	  muloutputs.write("train",key, vectorText);
+	}else{
+	  	  muloutputs.write("test",key, vectorText);
+	}
 	vectorText.set(vector);
 	context.write(key, vectorText);
 }
@@ -249,9 +280,9 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	      System.err.println("Usage: wordcount <in> <out>");
 	      System.exit(2);
 	    }
-	    String out1="/wcout8";
+	    String out1="/wcout05";
 	    conf.set("mapreduce.input.fileinputformat.input.dir.recursive", "true"); 
-	    Job job = new Job(conf, "word count");
+	    Job job = Job.getInstance(conf, "WordCount & InvertedIndex");
 	    job.setJarByClass(train.class);
 	    job.setMapperClass(TokenizerMapper.class);
 	    //job.setCombinerClass(IntSumReducer.class);
@@ -266,13 +297,15 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	    FileOutputFormat.setOutputPath(job, new Path(out1));
 	    
 	    job.waitForCompletion(true);
-	    Job job2 = new Job(conf, " count");
+	    Job job2 = Job.getInstance(conf, "Tf-idf & Vectorization");
 	    job2.setJarByClass(train.class);
 	    job2.setMapperClass(TfidfMapper.class);
 	    job2.setReducerClass(VectorizeReducer.class);
 	    job2.setOutputKeyClass(Text.class);
 	    job2.setOutputValueClass(Text.class);
 	    //job2.setInputFormatClass(SequenceFileInputFormat.class);
+	    MultipleOutputs.addNamedOutput(job2, "train", TextOutputFormat.class, Text.class, Text.class);                                                                                                                      
+        MultipleOutputs.addNamedOutput(job2, "test", TextOutputFormat.class, Text.class, Text.class); 	    
 	    FileInputFormat.addInputPath(job2, new Path(out1));
 	    FileOutputFormat.setOutputPath(job2, new Path(otherArgs[1]));
 	    //FileSystem.get(conf).delete(new Path(out1));
