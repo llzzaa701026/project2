@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.StringTokenizer;
 import java.io.StringReader;  
-
+import java.lang.Math;
 import org.apache.lucene.analysis.Analyzer;  
 import org.apache.lucene.analysis.TokenStream;  
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;  
@@ -66,12 +66,12 @@ public class train {
             CharTermAttribute charTermAttribute = tokenStream  
                     .getAttribute(CharTermAttribute.class);  
             word.set(charTermAttribute.toString());  
-            filetitle.set(fileName+":1");
+            filetitle.set(strtrainsymbol+fileName+":1");
             context.write(word, filetitle);
-            type.set(strtype);
+           /* type.set(strtype);
             context.write(type, filetitle);
             trainsymbol.set(strtrainsymbol);
-            context.write(trainsymbol, filetitle);
+            context.write(trainsymbol, filetitle);*/
             
         }  
         
@@ -81,33 +81,95 @@ public class train {
     }
   }
  
+  public static class TfidfMapper extends
+  Mapper<Object,   Text, Text, Text> {
 
+private Text word = new Text();
+private Text doc = new Text();
+  
+public void map(Object key, Text value, Context context)
+    throws IOException, InterruptedException {
+	 String title;
+	 int conut;
+	 String[] v = value.toString().split("\t");
+	 String strword=v[0];
+	 
+	 String sourceStr = v[1];
+	 String[] a=sourceStr.split(",");
+	 ArrayList<String> titlelist = new ArrayList<String>();
+     ArrayList<Integer> tf = new ArrayList<Integer>();
+     ArrayList<Double> tfidf = new ArrayList<Double>();
+     
+   	  for (int j=0;j<a.length;j++){
+   		  String[] b=a[j].split(":");
+   		  title=b[0];
+   		  conut=Integer.parseInt(b[1]);
+   		  int index=titlelist.indexOf(title);
+       	  if (index==-1){
+       		  titlelist.add(title);
+       		  tf.add(conut);    		  
+       	  }
+       	  else{
+       		  tf.set(index, tf.get(index)+conut) ;
+       	  }
+       	  }
+      double idf=Math.log(50.0/titlelist.size());
+        for(int i=0;i<titlelist.size();i++){
+      	  tfidf.add(idf*tf.get(i));
+        }
+        
+        //String strresult="";
+        for(int i=0;i<titlelist.size();i++){
+        	doc.set(titlelist.get(i));
+        	word.set(strword+":"+tfidf.get(i).toString());
+        	context.write(doc, word);
+        	//strresult=strresult+titlelist.get(i).toString()+":"+tfidf.get(i).toString()+",";
+      	}
+        /*if(getmax(tfidf)<10){
+      	  return;
+        }   */	  
+     //context.write(word, filetitle);
+     
+    
+
+	
+}
+}
   public static class IntSumReducer extends
       Reducer<Text, Text, Text, Text> {
     private Text result = new Text();
-    private MultipleOutputs<Text, Text> muloutputs;  
+    //private MultipleOutputs<Text, Text> muloutputs;  
     int i;
     @Override  
     public void setup(Context context) throws IOException, InterruptedException {  
         //System.out.println("enter LogReducer:::setup method");  
-    	muloutputs = new MultipleOutputs(context);  
+    	//muloutputs = new MultipleOutputs(context);  
         i=0;
     }  
   
     @Override  
     public void cleanup(Context context) throws IOException, InterruptedException {  
         //System.out.println("enter LogReducer:::cleanup method");  
-    	muloutputs.close();  
+    	//muloutputs.close();  
     } 
-    
+    public double getmax(ArrayList<Double> tfidf) throws IOException, InterruptedException { 
+    	double max=0;
+    	for(int i=0;i<tfidf.size();i++){
+    		if(tfidf.get(i)>max){
+    			max=tfidf.get(i);
+    		}
+    	}
+    	return max;
+    }
     public void reduce(Text key, Iterable<Text> values, Context context)
         throws IOException, InterruptedException {
-      int sum = 0;
+      int id = 0;
       int conut;
       int flag;
       String title;
       ArrayList<String> titlelist = new ArrayList<String>();
-      ArrayList<Integer> sumlist = new ArrayList<Integer>();
+      ArrayList<Integer> tf = new ArrayList<Integer>();
+      ArrayList<Double> tfidf = new ArrayList<Double>();
       for (Text val : values) {
     	  String[] a=val.toString().split(",");
     	  for (int j=0;j<a.length;j++){
@@ -117,29 +179,36 @@ public class train {
     		  int index=titlelist.indexOf(title);
         	  if (index==-1){
         		  titlelist.add(title);
-        		  sumlist.add(conut);    		  
+        		  tf.add(conut);    		  
         	  }
         	  else{
-        		  sumlist.set(index, sumlist.get(index)+conut) ;
+        		  tf.set(index, tf.get(index)+conut) ;
         	  }
     	  }
     	 
         //sum += val.get();
       }
+      /*double idf=Math.log(50.0/titlelist.size());
+      for(int i=0;i<titlelist.size();i++){
+    	  tfidf.add(idf*tf.get(i));
+      }
+      if(getmax(tfidf)<10){
+    	  return;
+      }*/
       String strresult="";
       for(int i=0;i<titlelist.size();i++){
-    	  strresult=strresult+titlelist.get(i).toString()+":"+sumlist.get(i).toString()+",";
+    	  strresult=strresult+titlelist.get(i).toString()+":"+tf.get(i).toString()+",";
     	  }
       result.set(strresult);
-      Text a=new Text();
+      /*Text a=new Text();
       i=i+1;
-      a.set(String.valueOf(i));
-      if(i>50){
-    	  muloutputs.write("big", key, result);
+      a.set(String.valueOf(i)+key.toString());
+      if(key.toString().contains("train")){
+    	  muloutputs.write("train", a, result);
       }
       else{
-    	  muloutputs.write("small", a, result);
-      }
+    	  muloutputs.write("test", a, result);
+      }*/
      // context.write(a, result);
       /*Configuration conf=context.getConfiguration();
       int k=Integer.valueOf(conf.get("k"));
@@ -151,9 +220,26 @@ public class train {
       Text a=new Text();
       i=i+1;
       a.set(String.valueOf(i));*/
-    //  context.write(a, result);
+      key.set(String.valueOf(id));
+     context.write(key, result);
     }
   }
+
+  public static class VectorizeReducer extends
+  Reducer<Text, Text, Text, Text> {
+
+	  Text vectorText=new Text();
+public void reduce(Text key, Iterable<Text> values, Context context)
+    throws IOException, InterruptedException {
+	String vector="";
+	for (Text val : values) {
+		vector=vector+" "+val.toString();
+	     
+	 }
+	vectorText.set(vector);
+	context.write(key, vectorText);
+}
+}
 
   public static void main(String[] args) throws Exception {
 	    Configuration conf = new Configuration();
@@ -163,18 +249,34 @@ public class train {
 	      System.err.println("Usage: wordcount <in> <out>");
 	      System.exit(2);
 	    }
+	    String out1="/wcout8";
 	    conf.set("mapreduce.input.fileinputformat.input.dir.recursive", "true"); 
 	    Job job = new Job(conf, "word count");
 	    job.setJarByClass(train.class);
 	    job.setMapperClass(TokenizerMapper.class);
-	    job.setCombinerClass(IntSumReducer.class);
+	    //job.setCombinerClass(IntSumReducer.class);
 	    job.setReducerClass(IntSumReducer.class);
+	    job.setNumReduceTasks(1);
 	    job.setOutputKeyClass(Text.class);
 	    job.setOutputValueClass(Text.class);
-	    MultipleOutputs.addNamedOutput(job, "big", TextOutputFormat.class, Text.class, Text.class);                                                                                                                      
-        MultipleOutputs.addNamedOutput(job, "small", TextOutputFormat.class, Text.class, Text.class); 
+	    //MultipleOutputs.addNamedOutput(job, "train", TextOutputFormat.class, Text.class, Text.class);                                                                                                                      
+        //MultipleOutputs.addNamedOutput(job, "test", TextOutputFormat.class, Text.class, Text.class); 
+	    //job.setOutputFormatClass(SequenceFileOutputFormat.class);
 	    FileInputFormat.addInputPath(job, new Path(otherArgs[0]));
-	    FileOutputFormat.setOutputPath(job, new Path(otherArgs[1]));
-	    System.exit(job.waitForCompletion(true) ? 0 : 1);
+	    FileOutputFormat.setOutputPath(job, new Path(out1));
+	    
+	    job.waitForCompletion(true);
+	    Job job2 = new Job(conf, " count");
+	    job2.setJarByClass(train.class);
+	    job2.setMapperClass(TfidfMapper.class);
+	    job2.setReducerClass(VectorizeReducer.class);
+	    job2.setOutputKeyClass(Text.class);
+	    job2.setOutputValueClass(Text.class);
+	    //job2.setInputFormatClass(SequenceFileInputFormat.class);
+	    FileInputFormat.addInputPath(job2, new Path(out1));
+	    FileOutputFormat.setOutputPath(job2, new Path(otherArgs[1]));
+	    //FileSystem.get(conf).delete(new Path(out1));
+	    System.exit(job2.waitForCompletion(true) ? 0 : 1);
+	    
 	  }
 	}
