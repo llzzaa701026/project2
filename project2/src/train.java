@@ -1,7 +1,13 @@
 
-import java.io.BufferedReader; 
-import java.io.InputStreamReader;  
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.StringTokenizer;
 import java.io.StringReader;  
@@ -260,7 +266,8 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	 }
 	//训练集 测试集 的文本向量分别输出
 	if(strkey.contains("train")){ 
-	  	  muloutputs.write("train",key, vectorText);
+	  	  muloutputs.write("trainKNN",key, vectorText);
+	  	  muloutputs.write("trainSVM",vectorText,null);
 	}else{
 	  	  muloutputs.write("test",key, vectorText);
 	}
@@ -292,8 +299,80 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	  }
   }
   
+  public static class SVMModel{
+	  Configuration conf;
+	  String SVMtrainSetPath;
+	  String modelPath;
+	  public SVMModel(String trainSetPath,Configuration config) throws IOException{
+		  SVMtrainSetPath=trainSetPath;
+		  modelPath="SVMmodel";
+          conf=config;
+	  }
+	  
+	  public void SVMtrain() throws IOException, InterruptedException{
+		  	String uri="hdfs://localhost:9000";
+		  	String trainset="trainsetSVM";
+		  	
+		  	File trainsetpath=new File(trainset);
+		  	if(!trainsetpath.exists()){
+		  		trainsetpath.createNewFile();
+		  	}
+		  	String SVMtrainSetPath1="/user/lza/"+SVMtrainSetPath;  
+	        FileSystem fs=FileSystem.get(URI.create(uri), conf);  
+	        InputStream in = fs.open(new Path(uri+SVMtrainSetPath1));
+	        OutputStream out = new FileOutputStream(trainset);  
+	        IOUtils.copyBytes(in, out, 4096, true);		       
+		    String[] SVMarg = { "-t","0" ,trainset,modelPath};
+		    svm_train.main(SVMarg);
+		    
+		    
+	  }
+	  
+	  public void setParameter() throws IOException, InterruptedException{
+		  File file = new File(modelPath); 
+		  InputStreamReader reader = new InputStreamReader( new FileInputStream(file)); // 建立一个输入流对象reader  
+		  BufferedReader br = new BufferedReader(reader);
+		  String line = ""; 
+		  line = br.readLine(); 
+		  line = br.readLine(); 
+		  line = br.readLine(); 
+		  line = br.readLine(); 
+		  String[] totalSV=line.split(" ");
+		  conf.set("totalSV", totalSV[1]);
+		  line = br.readLine(); 
+		  String[] rho=line.split(" ");
+		  conf.set("rho1", rho[1]);
+		  conf.set("rho2", rho[2]);
+		  conf.set("rho3", rho[3]);
+		  line = br.readLine(); 
+		  String[] label=line.split(" ");
+		  conf.set("label1", label[1]);
+		  conf.set("label2", label[2]);
+		  conf.set("label3", label[3]);
+		  line = br.readLine(); 
+		  System.out.println(line);
+		  String[] nSV=line.split(" ");
+		  System.out.println(nSV[1]);
+		  conf.set("nSV1", nSV[1]);
+		  conf.set("nSV2", nSV[2]);
+		  conf.set("nSV3", nSV[3]);
+		  System.out.println(line);
+		  line = br.readLine(); 
+		  for(int i=0;i<3;i++){
+			  String SV=label[i+1]+"SV";
+			  for(int j=0;j<Integer.parseInt(nSV[i+1]);j++){
+				  line = br.readLine(); 
+				  conf.set(SV+j,line);
+			  }
+		  }
+		  System.out.println(line);
+		  //SupportVector b=new SupportVector(line,1);
+	  }
+  }
+  
+  
   public static class KNNMapper extends
-  Mapper<Object,   Text, Text, Text> {
+  		Mapper<Object,   Text, Text, Text> {
 		
 		private Text testDoc = new Text();
 		private Text trainDocDist = new Text();
@@ -402,6 +481,173 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 			context.write(key, predictLabel);
 		}
   }
+  
+ 
+  public static class SupportVector{
+	  
+	  String type;
+	  double[] coef =new double[2];
+	  svm_node[] node;
+	  public SupportVector(String strvector,String label) throws IOException, InterruptedException{
+		  type=label;
+		  StringTokenizer st = new StringTokenizer(strvector," \t\n\r\f:");
+		  coef[0]=Double.parseDouble(st.nextToken());
+		  coef[1]=Double.parseDouble(st.nextToken());
+		  int m=st.countTokens()/2;
+		  node=new svm_node[m];
+		  for(int i=0;i<m;i++){
+			  node[i] = new svm_node();
+			  node[i].index = Integer.parseInt(st.nextToken());
+			  node[i].value = Double.parseDouble(st.nextToken());
+		  }		  
+	  }
+  }
+  
+  
+  public static class svm_node implements java.io.Serializable
+  {
+  	public int index;
+  	public double value;
+  }
+  public static class SVMMapper extends
+	Mapper<Object,   Text, Text, Text> {
+	  
+	
+	String trainData;
+	private SupportVector[] sv1;
+	private SupportVector[] sv2;
+	private SupportVector[] sv3;
+	private int nsv1,nsv2,nsv3;
+	private String label1,label2,label3;
+	Configuration conf;
+	public void setup(Context context) throws IOException, InterruptedException {  
+	      System.out.println("Loading trainSet..."); 
+	      
+	      conf=context.getConfiguration();
+	      label1=conf.get("label1");
+	      label2=conf.get("label2");
+	      label3=conf.get("label3");
+	      nsv1=Integer.parseInt(conf.get("nSV1"));
+	      nsv2=Integer.parseInt(conf.get("nSV2"));
+	      nsv3=Integer.parseInt(conf.get("nSV3"));
+	      sv1=new SupportVector[nsv1];
+	      sv2=new SupportVector[nsv2];
+	      sv3=new SupportVector[nsv3];
+	      for(int i=0;i<nsv1;i++){
+	    	  sv1[i]=new SupportVector(conf.get(label1+"SV"+i),label1);
+	      }
+	      for(int i=0;i<nsv2;i++){
+	    	  sv2[i]=new SupportVector(conf.get(label2+"SV"+i),label2);
+	      }
+	      for(int i=0;i<nsv3;i++){
+	    	  sv3[i]=new SupportVector(conf.get(label3+"SV"+i),label3);
+	      }
+	      //String model=conf.get("SVMmodel");
+	          	
+  } 
+	
+	public double multiply(svm_node[] node1,svm_node[] node2) throws IOException, InterruptedException { 
+		double sum=0;
+		for(int i=0;i<node1.length;i++){
+			for(int j=0;j<node2.length;j++){
+				if(node1[i].index==node2[j].index){
+					sum=sum+node1[i].value*node2[j].value;
+				}
+			}	
+		}
+		return sum;
+	}
+	
+	public void map(Object key, Text value, Context context)
+	    throws IOException, InterruptedException {
+		 Text f=new Text();		 
+		 Text doc=new Text();
+		 String TestsetVector = value.toString();
+		 String[] v1=TestsetVector.split("\t");	
+		 doc.set(v1[0]);
+		 if(v1.length==1){
+			 return;
+		 }
+		 String[] Vector1Item=v1[1].split(" ");
+		 
+		 svm_node[] node=new svm_node[(Vector1Item.length-1)];
+			for(int i=1;i<Vector1Item.length;i++){
+				String[] Item=Vector1Item[i].split(":");
+				node[i-1]=new svm_node();
+				node[i-1].index=Integer.parseInt(Item[0]);
+				node[i-1].value=Double.parseDouble(Item[1]);
+			}
+			double alpha1,alpha2,f12=0,f13=0,f21=0,f23=0,f31=0,f32=0;
+			for(int i=0;i<nsv1;i++){
+				alpha1=sv1[i].coef[0];
+				alpha2=sv1[i].coef[1];				
+				f12=f12+alpha1*multiply(node,sv1[i].node);
+				f13=f13+alpha2*multiply(node,sv1[i].node);
+			}
+			
+			
+			for(int i=0;i<nsv2;i++){
+				alpha1=sv2[i].coef[0];
+				alpha2=sv2[i].coef[1];				
+				f21=f21+alpha1*multiply(node,sv2[i].node);
+				f23=f23+alpha2*multiply(node,sv2[i].node);
+			}
+			
+			
+			for(int i=0;i<nsv3;i++){
+				alpha1=sv3[i].coef[0];
+				alpha2=sv3[i].coef[1];				
+				f31=f31+alpha1*multiply(node,sv3[i].node);
+				f32=f32+alpha2*multiply(node,sv3[i].node);
+			}
+			f.set(label1+"v"+label2+":"+Double.toString(f12+f21));
+			context.write(doc, f);
+			f.set(label1+"v"+label3+":"+Double.toString(f13+f31));
+			context.write(doc, f);
+			f.set(label2+"v"+label3+":"+Double.toString(f23+f32));
+			context.write(doc, f);
+		 }
+  	}
+  
+  public static class SVMReducer extends
+  Reducer<Text, Text, Text, Text> {
+	    private Text result = new Text();
+	    public int getMax(double[] arr){
+	    	int i=0;
+	    	double max=-1;
+	          for(i=0;i<arr.length;i++){
+	              if(arr[i]>max){
+	                   max=arr[i];
+	              }
+	         }
+	          return i;
+	     }
+	    public void reduce(Text key, Iterable<Text> values, Context context)
+	        throws IOException, InterruptedException {
+	    	double[] vote=new double[3];
+	    	double f;
+	     
+	      for (Text val : values) {
+	    	  String[] v=val.toString().split(":");
+	    	  f=Double.parseDouble(v[1]);
+	    	  String[] label=v[0].split("v");
+	    	  if(f>0){
+	    		  vote[Integer.parseInt(label[0])-1]+=f;
+	    	  }else{
+	    		  vote[Integer.parseInt(label[1])-1]+=-f;
+	    	  }
+	      }
+	      if(getMax(vote)==0){
+	    	  result.set("Positive");
+	      }else if(getMax(vote)==1){
+	    	  result.set("Negative");
+	      }else{
+	    	  result.set("Neutral");
+	      }	      
+	      context.write(key, result);
+	    }
+}
+
   public static void main(String[] args) throws Exception {
 	    Configuration conf = new Configuration();
 	    String[] otherArgs =
@@ -431,13 +677,15 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	    job2.setOutputKeyClass(Text.class);
 	    job2.setOutputValueClass(Text.class);
 	    //训练集 测试集 的文本向量分别输出
-	    MultipleOutputs.addNamedOutput(job2, "train", TextOutputFormat.class, Text.class, Text.class);                                                                                                                      
+	    //训练SVM和KNN的数据格式稍有不同 这里为了方便分别输出
+	    MultipleOutputs.addNamedOutput(job2, "trainKNN", TextOutputFormat.class, Text.class, Text.class);
+	    MultipleOutputs.addNamedOutput(job2, "trainSVM", TextOutputFormat.class, Text.class, Text.class);                                                                                                                      
         MultipleOutputs.addNamedOutput(job2, "test", TextOutputFormat.class, Text.class, Text.class); 	    
 	    FileInputFormat.addInputPath(job2, new Path(out1));
 	    FileOutputFormat.setOutputPath(job2, new Path(otherArgs[1]));
 	    
 	    job2.waitForCompletion(true);	    
-	    String trainSetPath=otherArgs[1]+"/train-r-00000";  //训练集 
+	    String trainSetPath=otherArgs[1]+"/trainKNN-r-00000";  //训练集 
 	    String testSetPath=otherArgs[1]+"/test-r-00000";    //测试集
 	    getDataFromHDFS getData=new getDataFromHDFS(trainSetPath, conf);  
         String trainData=getData.getstring();
@@ -453,7 +701,23 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	    job3.setOutputValueClass(Text.class);
 	    FileInputFormat.addInputPath(job3, new Path(testSetPath));
 	    FileOutputFormat.setOutputPath(job3, new Path(otherArgs[1]+"x"));
-	    System.exit(job3.waitForCompletion(true) ? 0 : 1);
+	    
+	    job3.waitForCompletion(true);
+	    String SVMtrainSetPath=otherArgs[1]+"/trainSVM-r-00000";  //训练集
+	    SVMModel svmModel=new SVMModel(SVMtrainSetPath,conf);
+	    svmModel.SVMtrain();
+	    svmModel.setParameter();
+	    Job job4 = Job.getInstance(conf, "SVM");
+	    job4.setJarByClass(train.class);
+	    job4.setMapperClass(SVMMapper.class);
+	    job4.setReducerClass(SVMReducer.class);
+	    job4.setOutputKeyClass(Text.class);
+	    job4.setOutputValueClass(Text.class);
+	    FileInputFormat.addInputPath(job4, new Path(testSetPath));
+	    FileOutputFormat.setOutputPath(job4, new Path(otherArgs[1]+"z"));
+	    
+	    
+	    System.exit(job4.waitForCompletion(true) ? 0 : 1);
 	    /*String testSetPath=otherArgs[1]+"/test-r-00000";
 	    getDataFromHDFS getData2=new getDataFromHDFS(testSetPath, conf);  
         String testData=getData2.getstring();
