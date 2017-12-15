@@ -12,7 +12,6 @@ import java.util.StringTokenizer;
 import java.io.StringReader;  
 import java.lang.Math;
 import java.net.URI;
-import org.apache.lucene.analysis.Analyzer;  
 import org.apache.lucene.analysis.TokenStream;  
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;  
 import org.wltea.analyzer.lucene.IKAnalyzer;
@@ -31,15 +30,12 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
-import org.apache.hadoop.mapreduce.lib.map.InverseMapper;
-import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
-import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.util.GenericOptionsParser;
 
 public class train {
 
-  public static class TokenizerMapper extends
+  public static class WordSplitMapper extends
       Mapper<Object,   Text, Text, Text> {
 
 
@@ -49,14 +45,11 @@ public class train {
     public void map(Object key, Text value, Context context)
         throws IOException, InterruptedException {
     	
-    	 String sourceStr = value.toString();
-        // String[] sourceStrArray = sourceStr.split("  ");         
+    	 String sourceStr = value.toString();      
 		IKAnalyzer analyzer = new IKAnalyzer();  
         // 使用智能分词  
         analyzer.setUseSmart(true); 
-      /*  if (sourceStrArray.length<3){
-        	return;
-        }*/
+   
         InputSplit inputSplit = context.getInputSplit();
 
         Path path=((FileSplit) inputSplit).getPath();
@@ -80,16 +73,8 @@ public class train {
             word.set(charTermAttribute.toString());  
             filetitle.set(strtrainsymbol+strtype+fileName+":1");
             context.write(word, filetitle);
-           /* type.set(strtype);
-            context.write(type, filetitle);
-            trainsymbol.set(strtrainsymbol);
-            context.write(trainsymbol, filetitle);*/
-            
         }  
-        
-        
-
-    	
+        analyzer.close(); 
     }
   }
  
@@ -138,8 +123,8 @@ public class train {
 	}
 }
   
-  public static class IntSumReducer extends
-      Reducer<Text, Text, Text, Text> {
+	  public static class InvertedIndexReducer extends
+	      Reducer<Text, Text, Text, Text> {
 		    private Text result = new Text();
 		    int id ;
 		    @Override  
@@ -183,8 +168,6 @@ public class train {
 		        		  tf.set(index, tf.get(index)+conut) ;
 		        	  }
 		    	  }
-		    	 
-		        //sum += val.get();
 		      }
 		      
 		      String strresult="";
@@ -257,7 +240,6 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	        String lineStr;
 	        while ((lineStr = bufferedReader.readLine()) != null){
 	        	strout=strout+lineStr+"\n\n";
-	        	//System.out.println("aaaaa"+lineStr);
 	        }
 	        IOUtils.closeStream(in); 
 	        return strout;
@@ -316,13 +298,11 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 		  conf.set("label2", label[2]);
 		  conf.set("label3", label[3]);
 		  line = br.readLine(); 
-		  System.out.println(line);
+		  //System.out.println(line);
 		  String[] nSV=line.split(" ");
-		  System.out.println(nSV[1]);
 		  conf.set("nSV1", nSV[1]);
 		  conf.set("nSV2", nSV[2]);
 		  conf.set("nSV3", nSV[3]);
-		  System.out.println(line);
 		  line = br.readLine(); 
 		  for(int i=0;i<3;i++){
 			  String SV=label[i+1]+"SV";
@@ -331,7 +311,8 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 				  conf.set(SV+j,line);
 			  }
 		  }
-		  System.out.println(line);
+		  //System.out.println(line);
+		  br.close();
 	  }
   }
   
@@ -401,7 +382,6 @@ public void reduce(Text key, Iterable<Text> values, Context context)
  
   public static class KNNReducer extends
 		  Reducer<Text, Text, Text, Text> {
-		private Text result = new Text();
 		int id ;
 		@Override  
 		public void setup(Context context) throws IOException, InterruptedException {
@@ -412,15 +392,7 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 		public void cleanup(Context context) throws IOException, InterruptedException {  
 			
 		} 
-		public double getmax(ArrayList<Double> tfidf) throws IOException, InterruptedException { 
-			double max=0;
-			for(int i=0;i<tfidf.size();i++){
-				if(tfidf.get(i)>max){
-					max=tfidf.get(i);
-				}
-			}
-			return max;
-		}
+		
 		public void reduce(Text key, Iterable<Text> values, Context context)
 		    throws IOException, InterruptedException {
 			double mindist=999999;
@@ -471,7 +443,11 @@ public void reduce(Text key, Iterable<Text> values, Context context)
   
   public static class svm_node implements java.io.Serializable
   {
-  	public int index;
+  	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+	public int index;
   	public double value;
   }
   public static class SVMMapper extends
@@ -623,18 +599,20 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	      System.err.println("Usage: wordcount <in> <out>");
 	      System.exit(2);
 	    }
-	    String out1=otherArgs[1]+"y";
+	    String out=otherArgs[1]+"tmp";
+	    String SVMout=otherArgs[1]+"SVM";
+	    String KNNout=otherArgs[1]+"KNN";
 	    conf.set("mapreduce.input.fileinputformat.input.dir.recursive", "true"); 
 	    Job job = Job.getInstance(conf, "WordCount & InvertedIndex");
 	    job.setJarByClass(train.class);
-	    job.setMapperClass(TokenizerMapper.class);
+	    job.setMapperClass(WordSplitMapper.class);
 	    //job.setCombinerClass(IntSumReducer.class);
-	    job.setReducerClass(IntSumReducer.class);
+	    job.setReducerClass(InvertedIndexReducer.class);
 	    job.setNumReduceTasks(1);
 	    job.setOutputKeyClass(Text.class);
 	    job.setOutputValueClass(Text.class);
 	    FileInputFormat.addInputPath(job, new Path(otherArgs[0]));
-	    FileOutputFormat.setOutputPath(job, new Path(out1));
+	    FileOutputFormat.setOutputPath(job, new Path(out));
 	    
 	    job.waitForCompletion(true);
 	    Job job2 = Job.getInstance(conf, "Tf-idf & Vectorization");
@@ -648,7 +626,7 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	    MultipleOutputs.addNamedOutput(job2, "trainKNN", TextOutputFormat.class, Text.class, Text.class);
 	    MultipleOutputs.addNamedOutput(job2, "trainSVM", TextOutputFormat.class, Text.class, Text.class);                                                                                                                      
         MultipleOutputs.addNamedOutput(job2, "test", TextOutputFormat.class, Text.class, Text.class); 	    
-	    FileInputFormat.addInputPath(job2, new Path(out1));
+	    FileInputFormat.addInputPath(job2, new Path(out));
 	    FileOutputFormat.setOutputPath(job2, new Path(otherArgs[1]));
 	    
 	    job2.waitForCompletion(true);	    
@@ -667,7 +645,7 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	    job3.setOutputKeyClass(Text.class);
 	    job3.setOutputValueClass(Text.class);
 	    FileInputFormat.addInputPath(job3, new Path(testSetPath));
-	    FileOutputFormat.setOutputPath(job3, new Path(otherArgs[1]+"x"));
+	    FileOutputFormat.setOutputPath(job3, new Path(KNNout));
 	    
 	    job3.waitForCompletion(true);
 	    String SVMtrainSetPath=otherArgs[1]+"/trainSVM-r-00000";  //训练集
@@ -681,7 +659,7 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	    job4.setOutputKeyClass(Text.class);
 	    job4.setOutputValueClass(Text.class);
 	    FileInputFormat.addInputPath(job4, new Path(testSetPath));
-	    FileOutputFormat.setOutputPath(job4, new Path(otherArgs[1]+"z"));
+	    FileOutputFormat.setOutputPath(job4, new Path(SVMout));
 	    
 	    
 	    System.exit(job4.waitForCompletion(true) ? 0 : 1);
