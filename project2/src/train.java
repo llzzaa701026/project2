@@ -41,7 +41,7 @@ public class train {
 
     private Text word = new Text();
     private Text filetitle = new Text();
-      
+       
     public void map(Object key, Text value, Context context)
         throws IOException, InterruptedException {
     	
@@ -443,9 +443,7 @@ public void reduce(Text key, Iterable<Text> values, Context context)
   
   public static class svm_node implements java.io.Serializable
   {
-  	/**
-	 * 
-	 */
+  	
 	private static final long serialVersionUID = 1L;
 	public int index;
   	public double value;
@@ -459,6 +457,7 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 		private SupportVector[] sv2;
 		private SupportVector[] sv3;
 		private int nsv1,nsv2,nsv3;
+		private double rho1,rho2,rho3;
 		private String label1,label2,label3;
 		Configuration conf;
 		public void setup(Context context) throws IOException, InterruptedException {  
@@ -471,6 +470,9 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 		      nsv1=Integer.parseInt(conf.get("nSV1"));
 		      nsv2=Integer.parseInt(conf.get("nSV2"));
 		      nsv3=Integer.parseInt(conf.get("nSV3"));
+		      rho1=Double.parseDouble(conf.get("rho1"));
+		      rho2=Double.parseDouble(conf.get("rho2"));
+		      rho3=Double.parseDouble(conf.get("rho3"));
 		      sv1=new SupportVector[nsv1];
 		      sv2=new SupportVector[nsv2];
 		      sv3=new SupportVector[nsv3];
@@ -541,11 +543,11 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 				f31=f31+alpha1*multiply(node,sv3[i].node);
 				f32=f32+alpha2*multiply(node,sv3[i].node);
 			}
-			f.set(label1+"v"+label2+":"+Double.toString(f12+f21));
+			f.set(label1+"v"+label2+":"+Double.toString(f12+f21-rho1));
 			context.write(doc, f);
-			f.set(label1+"v"+label3+":"+Double.toString(f13+f31));
+			f.set(label1+"v"+label3+":"+Double.toString(f13+f31-rho2));
 			context.write(doc, f);
-			f.set(label2+"v"+label3+":"+Double.toString(f23+f32));
+			f.set(label2+"v"+label3+":"+Double.toString(f23+f32-rho3));
 			context.write(doc, f);
 		 }
   	}
