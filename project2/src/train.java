@@ -543,11 +543,11 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 				f31=f31+alpha1*multiply(node,sv3[i].node);
 				f32=f32+alpha2*multiply(node,sv3[i].node);
 			}
-			f.set(label1+"v"+label2+":"+Double.toString(f12+f21-rho1));
+			f.set(label1+"v"+label2+":"+Double.toString(f12+f21+rho1));
 			context.write(doc, f);
-			f.set(label1+"v"+label3+":"+Double.toString(f13+f31-rho2));
+			f.set(label1+"v"+label3+":"+Double.toString(f13+f31+rho2));
 			context.write(doc, f);
-			f.set(label2+"v"+label3+":"+Double.toString(f23+f32-rho3));
+			f.set(label2+"v"+label3+":"+Double.toString(f23+f32+rho3));
 			context.write(doc, f);
 		 }
   	}
@@ -581,14 +581,14 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	    		  vote[Integer.parseInt(label[1])-1]+=-f;
 	    	  }
 	      }
-	      result.set(Double.toString(vote[0])+Double.toString(vote[2])+Double.toString(vote[1]));
+	      //result.set(Double.toString(vote[0])+Double.toString(vote[2])+Double.toString(vote[1]));
 	      if(getMax(vote)==0){
 	    	  result.set("Positive");
 	      }else if(getMax(vote)==1){
 	    	  result.set("Negative");
 	      }else{
 	    	  result.set("Neutral");
-	      }	      
+	      }	    
 	      context.write(key, result);
 	    }
 }
