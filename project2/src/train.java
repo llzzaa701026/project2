@@ -578,14 +578,15 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 		  Reducer<Text, Text, Text, Text> {
 		  private Text result = new Text();
 			    public int getMax(double[] arr){
-			    	int i=0;
+			    	int id=0;
 			    	double max=-1;
-			          for(i=0;i<arr.length;i++){
+			          for(int i=0;i<arr.length;i++){
 			              if(arr[i]>max){
 			                   max=arr[i];
+			                   id=i;
 			              }
 			         }
-			          return i;
+			         return id;
 			     }
 	    public void reduce(Text key, Iterable<Text> values, Context context)
 	        throws IOException, InterruptedException {
@@ -602,13 +603,14 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	    		  vote[Integer.parseInt(label[1])-1]+=-f;
 	    	  }
 	      }
-	      if(getMax(vote)==0){
+	      result.set(Double.toString(vote[0])+Double.toString(vote[2])+Double.toString(vote[1]));
+	     /* if(getMax(vote)==0){
 	    	  result.set("Positive");
 	      }else if(getMax(vote)==1){
 	    	  result.set("Negative");
 	      }else{
 	    	  result.set("Neutral");
-	      }	      
+	      }	      */
 	      context.write(key, result);
 	    }
 }
