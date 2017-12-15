@@ -604,13 +604,13 @@ public void reduce(Text key, Iterable<Text> values, Context context)
 	    	  }
 	      }
 	      result.set(Double.toString(vote[0])+Double.toString(vote[2])+Double.toString(vote[1]));
-	     /* if(getMax(vote)==0){
+	      if(getMax(vote)==0){
 	    	  result.set("Positive");
 	      }else if(getMax(vote)==1){
 	    	  result.set("Negative");
 	      }else{
 	    	  result.set("Neutral");
-	      }	      */
+	      }	      
 	      context.write(key, result);
 	    }
 }
